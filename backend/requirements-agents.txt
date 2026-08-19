@@ -1,0 +1,6 @@
+# Optional layer -- install only if you're exploring the Ollama/LangChain/
+# LangGraph agent experiments under app/agents/. The core StudyMentor API
+# (backend/requirements.txt) does not depend on any of this.
+langchain-core==0.3.15
+langchain-ollama==0.2.0
+langgraph==0.2.45
