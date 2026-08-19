@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter
 
 from app.database import get_collection
@@ -15,25 +17,58 @@ async def get_dashboard(user_id: str = "demo-user"):
     single request.
     """
     questions = await get_collection("questions").find({})
-    sessions = await get_collection("study_sessions").find({"user_id": user_id})
+    sessions = await get_collection("study_sessions").find(
+        {"user_id": user_id}
+    )
 
-    today_sessions = [s for s in sessions if s.get("ended_at")]
+    today = datetime.now(timezone.utc).date()
+
+    today_sessions = [
+        session
+        for session in sessions
+        if session.get("ended_at")
+        and (
+            session["ended_at"].date()
+            if isinstance(session["ended_at"], datetime)
+            else datetime.fromisoformat(session["ended_at"]).date()
+        )
+        == today
+    ]
+
     minutes_studied = sum(
-        (s.get("duration_seconds") or 0) for s in today_sessions
+        (session.get("duration_seconds") or 0)
+        for session in today_sessions
     ) // 60
-    reviews_done_today = sum(s.get("questions_attempted", 0) for s in today_sessions)
-    correct_today = sum(s.get("questions_correct", 0) for s in today_sessions)
+
+    reviews_done_today = sum(
+        session.get("questions_attempted", 0)
+        for session in today_sessions
+    )
+
+    correct_today = sum(
+        session.get("questions_correct", 0)
+        for session in today_sessions
+    )
+
     recall_pct = (
         round(100 * correct_today / reviews_done_today, 1)
         if reviews_done_today
         else 0.0
     )
 
+    topics_touched_today = len(
+        {
+            topic
+            for session in today_sessions
+            for topic in session.get("topics_reviewed", [])
+        }
+    )
+
     return {
         "minutes_studied_today": minutes_studied,
         "reviews_completed_today": reviews_done_today,
         "recall_percent_today": recall_pct,
-        "topics_touched_today": len({t for s in today_sessions for t in s.get("topics_reviewed", [])}),
+        "topics_touched_today": topics_touched_today,
         "due": due_counts(questions),
         "retention_by_topic": topic_retention(questions),
         "weakest_topics": weakest_topics(questions),
