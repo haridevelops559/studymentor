@@ -18,7 +18,7 @@ Run: python -m app.agents.chains   (requires Ollama running locally)
 """
 from __future__ import annotations
 
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import StrOutputParser, PydanticOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from app.agents.llm import get_llm
@@ -29,6 +29,7 @@ from app.agents.parsers import (
 from app.agents.prompts import (
     QUESTION_GENERATION_PROMPT,
     LEARNING_DECISION_PROMPT,
+    FEYNMAN_FEEDBACK_PROMPT,
 )
 
 
@@ -152,7 +153,24 @@ def build_parallel_summary_chain():
     word_count = RunnableLambda(lambda inputs: len(inputs["notes"].split()))
 
     return RunnableParallel(sample_question=tone_summary, notes_word_count=word_count)
+def build_feynman_feedback_chain():
+    """
+    Build the optional LLM feedback chain for Feynman explanations.
 
+    Flow:
+        prompt -> LLM -> string parser
+
+    The deterministic check_feynman_coverage() function remains the source
+    of truth for coverage. This LLM only turns the detected gaps into
+    concise coaching feedback.
+    """
+    llm = get_llm()
+
+    return (
+        FEYNMAN_FEEDBACK_PROMPT
+        | llm
+        | StrOutputParser()
+    )
 
 if __name__ == "__main__":
     sample_input = {
