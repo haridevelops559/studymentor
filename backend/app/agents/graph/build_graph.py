@@ -42,16 +42,17 @@ Run: python -m app.agents.graph.build_graph   (requires Ollama running locally)
 from __future__ import annotations
 
 from typing import TypedDict
-
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
-
 from app.agents.graph.nodes import (
+    adaptive_planner_node,
     critique_node,
     generate_node,
     human_approval_node,
     increment_retry_node,
 )
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+
+
 from app.agents.graph.state import QuestionGenState
 
 MAX_RETRIES = 2
@@ -69,32 +70,40 @@ def route_after_critique(state: QuestionGenState) -> str:
 def build_question_gen_graph():
     graph = StateGraph(QuestionGenState)
 
+    # Nodes
+    graph.add_node("adaptive_planner", adaptive_planner_node)
     graph.add_node("generate", generate_node)
-    graph.add_node("critique", critique_node)
+    graph.add_node("quality_check", critique_node)
     graph.add_node("increment_retry", increment_retry_node)
     graph.add_node("human_approval", human_approval_node)
 
-    graph.set_entry_point("generate")
-    graph.add_edge("generate", "critique")
+    # Entry point
+    graph.set_entry_point("adaptive_planner")
 
-    # Conditional edge: the graph itself has no idea whether it's "done"
-    # until `route_after_critique` inspects state at runtime.
+    # Planner -> question generation
+    graph.add_edge("adaptive_planner", "generate")
+
+    # Generation -> quality check
+    graph.add_edge("generate", "quality_check")
+
+    # Conditional routing after quality check
     graph.add_conditional_edges(
-        "critique",
+        "quality_check",
         route_after_critique,
-        {"end": END, "retry": "increment_retry", "human_approval": "human_approval"},
+        {
+            "end": END,
+            "retry": "increment_retry",
+            "human_approval": "human_approval",
+        },
     )
 
-    # Retry loop: bounded by MAX_RETRIES via route_after_critique, so this
-    # can never spin forever even though it's a literal cycle in the graph.
+    # Retry loop
     graph.add_edge("increment_retry", "generate")
+
+    # Human approval -> end
     graph.add_edge("human_approval", END)
 
-    # Checkpointing: MemorySaver persists state after every node transition,
-    # keyed by a thread_id you pass at invoke time. Swap for a Postgres/
-    # SQLite checkpointer in production so a run survives a process
-    # restart -- same "swap the backend, keep the interface" pattern as
-    # app/database.py.
+    # Checkpointing
     checkpointer = MemorySaver()
 
     return graph.compile(checkpointer=checkpointer)
@@ -160,23 +169,79 @@ if __name__ == "__main__":
 
     initial_state: QuestionGenState = {
         "topic": "Virtual Memory",
-        "notes": "Virtual memory lets a process use more address space than "
-        "physical RAM by mapping pages to disk.",
+        "notes": (
+            "Virtual memory lets a process use more address space than "
+            "physical RAM by mapping pages to disk. Page faults occur "
+            "when a needed page is not in physical memory."
+        ),
+        "learning_state": {
+            "weak_topics": [
+                {
+                    "topic_id": "Virtual Memory",
+                    "retention": 52.0,
+                }
+            ],
+            "due_questions": 4,
+            "recent_reviews": [
+                {"rating": "again"},
+                {"rating": "hard"},
+                {"rating": "again"},
+            ],
+            "feynman_gaps": [
+                "page fault",
+            ],
+        },
+        "selected_activity": "",
+        "selected_topic": "",
+        "selected_difficulty": 2.0,
+        "decision_reason": "",
         "attempt_log": [],
         "draft_questions": [],
+        "activity_result": {},
         "critique": "",
         "is_approved": False,
         "retry_count": 0,
         "needs_human_review": False,
     }
 
-    # thread_id is what the checkpointer uses to persist/resume this run.
-    config = {"configurable": {"thread_id": "demo-run-1"}}
-    final_state = app.invoke(initial_state, config=config)
+    # thread_id allows LangGraph's checkpointer to identify and resume
+    # this particular workflow execution.
+    config = {
+        "configurable": {
+            "thread_id": "demo-adaptive-run-1"
+        }
+    }
 
-    print("Attempt log:")
+    final_state = app.invoke(
+        initial_state,
+        config=config,
+    )
+
+    print("\n=== ADAPTIVE LEARNING DECISION ===")
+    print("Activity:", final_state["selected_activity"])
+    print("Topic:", final_state["selected_topic"])
+    print("Difficulty:", final_state["selected_difficulty"])
+    print("Reason:", final_state["decision_reason"])
+
+    print("\n=== AGENT ATTEMPT LOG ===")
     for line in final_state["attempt_log"]:
         print(" -", line)
-    print("\nApproved:", final_state["is_approved"])
-    print("Needed human review:", final_state["needs_human_review"])
-    print("Final questions:", final_state["draft_questions"])
+
+    print("\n=== CRITIQUE ===")
+    print(final_state["critique"])
+
+    print("\n=== FINAL STATUS ===")
+    print("Approved:", final_state["is_approved"])
+    print("Retries used:", final_state["retry_count"])
+    print("Needs human review:", final_state["needs_human_review"])
+
+    print("\n=== ACTIVITY RESULT ===")
+    print(final_state["activity_result"])
+
+    print("\n=== FINAL QUESTIONS ===")
+    for index, question in enumerate(
+        final_state["draft_questions"],
+        start=1,
+    ):
+        print(f"\n{index}. {question['question']}")
+        print(f"   Answer: {question['answer']}")
