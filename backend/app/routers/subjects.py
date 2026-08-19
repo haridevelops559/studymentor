@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException
 
 from app.database import get_collection
@@ -14,7 +16,9 @@ async def list_subjects():
 
 @router.post("", response_model=Subject, status_code=201)
 async def create_subject(payload: SubjectCreate):
-    doc = await get_collection("subjects").insert_one(payload.model_dump())
+    doc = payload.model_dump()
+    doc["created_at"] = datetime.now(timezone.utc)
+    doc = await get_collection("subjects").insert_one(doc)
     return doc
 
 
