@@ -45,6 +45,7 @@ from typing import TypedDict
 from app.agents.graph.nodes import (
     adaptive_planner_node,
     critique_node,
+    feynman_node,
     generate_node,
     human_approval_node,
     increment_retry_node,
@@ -66,27 +67,91 @@ def route_after_critique(state: QuestionGenState) -> str:
         return "human_approval"
     return "retry"
 
+def route_after_planner(state: QuestionGenState) -> str:
+    """Route to the learning activity selected by the adaptive planner."""
+
+    activity = state["selected_activity"]
+
+    if activity == "feynman":
+        return "feynman"
+
+    if activity == "retrieval":
+        return "retrieval"
+
+    if activity == "elaboration":
+        return "elaboration"
+
+    return "end"
+
+
 
 def build_question_gen_graph():
     graph = StateGraph(QuestionGenState)
 
+    # -------------------------
     # Nodes
-    graph.add_node("adaptive_planner", adaptive_planner_node)
-    graph.add_node("generate", generate_node)
-    graph.add_node("quality_check", critique_node)
-    graph.add_node("increment_retry", increment_retry_node)
-    graph.add_node("human_approval", human_approval_node)
+    # -------------------------
 
-    # Entry point
+    graph.add_node(
+        "adaptive_planner",
+        adaptive_planner_node,
+    )
+
+    graph.add_node(
+        "generate",
+        generate_node,
+    )
+
+    graph.add_node(
+        "feynman",
+        feynman_node,
+    )
+
+    graph.add_node(
+        "quality_check",
+        critique_node,
+    )
+
+    graph.add_node(
+        "increment_retry",
+        increment_retry_node,
+    )
+
+    graph.add_node(
+        "human_approval",
+        human_approval_node,
+    )
+
+    # -------------------------
+    # Entry
+    # -------------------------
+
     graph.set_entry_point("adaptive_planner")
 
-    # Planner -> question generation
-    graph.add_edge("adaptive_planner", "generate")
+    # -------------------------
+    # Planner → activity
+    # -------------------------
 
-    # Generation -> quality check
-    graph.add_edge("generate", "quality_check")
+    graph.add_conditional_edges(
+        "adaptive_planner",
+        route_after_planner,
+        {
+            "retrieval": "generate",
+            "feynman": "feynman",
+            "elaboration": END,
+            "end": END,
+        },
+    )
 
-    # Conditional routing after quality check
+    # -------------------------
+    # Retrieval branch
+    # -------------------------
+
+    graph.add_edge(
+        "generate",
+        "quality_check",
+    )
+
     graph.add_conditional_edges(
         "quality_check",
         route_after_critique,
@@ -97,18 +162,38 @@ def build_question_gen_graph():
         },
     )
 
-    # Retry loop
-    graph.add_edge("increment_retry", "generate")
+    graph.add_edge(
+        "increment_retry",
+        "generate",
+    )
 
-    # Human approval -> end
-    graph.add_edge("human_approval", END)
+    # -------------------------
+    # Feynman branch
+    # -------------------------
 
+    graph.add_edge(
+        "feynman",
+        END,
+    )
+
+    # -------------------------
+    # Human review
+    # -------------------------
+
+    graph.add_edge(
+        "human_approval",
+        END,
+    )
+
+    # -------------------------
     # Checkpointing
+    # -------------------------
+
     checkpointer = MemorySaver()
 
-    return graph.compile(checkpointer=checkpointer)
-
-
+    return graph.compile(
+        checkpointer=checkpointer,
+    )
 def question_gen_subgraph():
     """
     Subgraphs: the compiled graph above IS a Runnable, so it can be

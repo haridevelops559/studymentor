@@ -1,41 +1,27 @@
 """
-Nodes.
+LangGraph nodes for StudyMentor.
 
-Concept being explored: a LangGraph node is a function
-`(state) -> partial_state_update`.
-
-The graph now contains an adaptive planner that chooses a learning
-intervention before the existing question-generation workflow runs.
-
-Flow:
-
-    adaptive_planner
-          ↓
-    selected activity
-          ↓
-    generate
-          ↓
-      critique
-          ↓
-    retry / human / END
+The graph contains:
+- adaptive planning
+- retrieval practice
+- Feynman self-explanation
+- deterministic quality checking
+- bounded retries
+- human review
 """
 from __future__ import annotations
 
 from app.agents.chains import (
+    build_feynman_feedback_chain,
     build_learning_decision_chain,
     build_question_generation_chain,
 )
 from app.agents.graph.state import QuestionGenState
+from app.services.scoring import check_feynman_coverage
 
 
 def adaptive_planner_node(state: QuestionGenState) -> dict:
-    """
-    Ask the adaptive learning planner to choose the most appropriate
-    learning intervention from the student's current learning state.
-
-    The LLM does NOT calculate retention or scheduling itself. Those values
-    are supplied by the deterministic backend/analytics layer.
-    """
+    """Choose the learning activity for the current learner state."""
     chain = build_learning_decision_chain()
 
     decision = chain.invoke(
@@ -52,8 +38,8 @@ def adaptive_planner_node(state: QuestionGenState) -> dict:
         "attempt_log": [
             (
                 f"[planner] selected '{decision.activity}' for "
-                f"'{decision.topic}' at difficulty {decision.difficulty}: "
-                f"{decision.reason}"
+                f"'{decision.topic}' at difficulty "
+                f"{decision.difficulty}: {decision.reason}"
             )
         ],
     }
@@ -61,18 +47,14 @@ def adaptive_planner_node(state: QuestionGenState) -> dict:
 
 def generate_node(state: QuestionGenState) -> dict:
     """
-    Generate (or regenerate) retrieval-practice questions.
+    Retrieval-practice executor.
 
-    The planner has already selected the topic and activity. For the
-    retrieval path, the existing question-generation chain is reused.
+    Generates questions from the selected topic's notes.
     """
     chain = build_question_generation_chain()
 
     topic = state["selected_topic"] or state["topic"]
 
-    # The current state still carries the notes for the topic being
-    # generated. A later version can retrieve notes dynamically based on
-    # selected_topic.
     result = chain.invoke(
         {
             "topic": topic,
@@ -81,25 +63,125 @@ def generate_node(state: QuestionGenState) -> dict:
         }
     )
 
+    questions = [q.model_dump() for q in result.questions]
+
     return {
-        "draft_questions": [q.model_dump() for q in result.questions],
+        "draft_questions": questions,
         "activity_result": {
             "activity": "retrieval",
             "topic": topic,
-            "question_count": len(result.questions),
+            "question_count": len(questions),
         },
         "attempt_log": [
-            f"[retrieval] generated {len(result.questions)} questions for '{topic}'"
+            f"[retrieval] generated {len(questions)} questions for '{topic}'"
+        ],
+    }
+
+
+def feynman_node(state: QuestionGenState) -> dict:
+    """
+    Feynman self-explanation executor.
+
+    The learner's explanation is checked deterministically against the
+    supplied checklist. If an LLM feedback chain is available, it can then
+    turn the missing concepts into concise coaching feedback.
+    """
+    topic = state["selected_topic"] or state["topic"]
+
+    learning_state = state["learning_state"]
+
+    explanation = learning_state.get("feynman_explanation", "")
+
+    checklist = learning_state.get("feynman_checklist", [])
+
+    if not explanation:
+        return {
+            "activity_result": {
+                "activity": "feynman",
+                "topic": topic,
+                "status": "awaiting_explanation",
+                "check_result": None,
+            },
+            "attempt_log": [
+                (
+                    f"[feynman] waiting for student explanation "
+                    f"for '{topic}'"
+                )
+            ],
+        }
+
+    if not checklist:
+        return {
+            "activity_result": {
+                "activity": "feynman",
+                "topic": topic,
+                "status": "missing_checklist",
+                "check_result": None,
+            },
+            "attempt_log": [
+                (
+                    f"[feynman] no checklist supplied for "
+                    f"'{topic}'"
+                )
+            ],
+        }
+
+    check_result = check_feynman_coverage(
+        explanation,
+        checklist,
+    )
+
+    feedback = ""
+
+    # Optional LLM feedback. The deterministic checker remains the source
+    # of truth for coverage.
+    try:
+        feedback_chain = build_feynman_feedback_chain()
+
+        feedback_result = feedback_chain.invoke(
+            {
+                "topic": topic,
+                "explanation": explanation,
+                "checklist": checklist,
+            }
+        )
+
+        feedback = str(feedback_result).strip()
+
+    except Exception as exc:
+        # Feynman scoring still works if the local LLM is unavailable.
+        feedback = (
+            "Review the missing concepts: "
+            + ", ".join(check_result.missing)
+            if check_result.missing
+            else "Your explanation covered the supplied concepts."
+        )
+
+        print(f"[feynman] optional LLM feedback unavailable: {exc}")
+
+    result = check_result.model_dump()
+
+    return {
+        "activity_result": {
+            "activity": "feynman",
+            "topic": topic,
+            "status": "completed",
+            "check_result": result,
+            "feedback": feedback,
+        },
+        "attempt_log": [
+            (
+                f"[feynman] coverage={check_result.coverage_ratio}, "
+                f"covered={len(check_result.covered)}, "
+                f"missing={len(check_result.missing)}"
+            )
         ],
     }
 
 
 def critique_node(state: QuestionGenState) -> dict:
     """
-    Reflection/Critic step.
-
-    This remains deterministic: generated questions are checked against
-    an explicit quality rule rather than asking the LLM to grade itself.
+    Deterministic quality check for retrieval-generated questions.
     """
     questions = state["draft_questions"]
 
@@ -121,12 +203,14 @@ def critique_node(state: QuestionGenState) -> dict:
     return {
         "critique": critique,
         "is_approved": approved,
-        "attempt_log": [f"[critic] {critique}"],
+        "attempt_log": [
+            f"[critic] {critique}"
+        ],
     }
 
 
 def increment_retry_node(state: QuestionGenState) -> dict:
-    """Bookkeeping node for the bounded retry loop."""
+    """Increment the bounded retry counter."""
     return {
         "retry_count": state["retry_count"] + 1,
     }
@@ -134,14 +218,15 @@ def increment_retry_node(state: QuestionGenState) -> dict:
 
 def human_approval_node(state: QuestionGenState) -> dict:
     """
-    Human-in-the-loop checkpoint.
-
-    If automatic retries are exhausted without meeting the quality bar,
-    flag the run for human review instead of silently accepting weak output.
+    Flag the workflow for human review after automatic retries are
+    exhausted.
     """
     return {
         "needs_human_review": True,
         "attempt_log": [
-            "[human-review] automatic retries exhausted; human review required"
+            (
+                "[human-review] automatic retries exhausted; "
+                "human review required"
+            )
         ],
     }
