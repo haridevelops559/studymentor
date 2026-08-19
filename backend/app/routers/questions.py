@@ -18,7 +18,9 @@ async def list_questions(topic_id: str | None = None):
 @router.post("", response_model=Question, status_code=201)
 async def create_question(payload: QuestionCreate):
     doc = payload.model_dump()
-    doc["next_review"] = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    doc["created_at"] = now
+    doc["next_review"] = now
     doc["review_count"] = 0
     doc["correct_count"] = 0
     doc["difficulty"] = 2.5
