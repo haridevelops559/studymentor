@@ -14,7 +14,7 @@ inserted through the same `POST /api/questions` path with no adapter code.
 Run: python -m app.agents.parsers
 """
 from __future__ import annotations
-
+from typing import Literal
 from pydantic import BaseModel, Field
 
 
@@ -39,16 +39,60 @@ def get_question_parser():
     return PydanticOutputParser(pydantic_object=GeneratedQuestionBatch)
 
 
+
+
+class LearningDecision(BaseModel):
+    activity: Literal[
+        "retrieval",
+        "feynman",
+        "elaboration",
+    ]
+    topic: str = Field(..., min_length=1)
+    difficulty: float = Field(..., ge=1.0, le=3.5)
+    reason: str = Field(..., min_length=1)
+
+
+def get_learning_decision_parser():
+    """
+    Pydantic parser for the adaptive learning planner.
+
+    The LLM must choose one supported learning activity and return
+    structured, validated data instead of free-form text.
+    """
+    from langchain_core.output_parsers import PydanticOutputParser
+
+    return PydanticOutputParser(pydantic_object=LearningDecision)
+
+
 if __name__ == "__main__":
     parser = get_question_parser()
-    print("Format instructions the LLM is told to follow:\n")
+
+    print("=== QUESTION PARSER ===")
+    print("Format instructions:\n")
     print(parser.get_format_instructions())
 
-    # Simulate a well-formed LLM response to prove the parser round-trips.
     sample_llm_output = (
         '{"questions": [{"question": "What is virtual memory?", '
         '"answer": "A technique letting processes use more address space '
         'than physical RAM."}]}'
     )
+
     parsed = parser.parse(sample_llm_output)
-    print("\nParsed object:", parsed)
+    print("\nParsed question object:", parsed)
+
+    print("\n=== LEARNING DECISION PARSER ===")
+
+    decision_parser = get_learning_decision_parser()
+
+    sample_decision = (
+        '{"activity": "feynman", '
+        '"topic": "Virtual Memory", '
+        '"difficulty": 2.0, '
+        '"reason": "The student has a conceptual gap that should be explained in their own words."}'
+    )
+
+    decision = decision_parser.parse(sample_decision)
+
+    print("\nParsed learning decision:", decision)
+    print("\nDecision format instructions:\n")
+    print(decision_parser.get_format_instructions())

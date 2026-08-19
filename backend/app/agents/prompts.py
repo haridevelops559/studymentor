@@ -61,6 +61,38 @@ FEYNMAN_FEEDBACK_PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
+LEARNING_DECISION_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are StudyMentor's adaptive learning planner. "
+            "Your job is to choose the most useful learning activity "
+            "for the student based on their current learning state. "
+            "\n\n"
+            "Available activities:\n"
+            "- retrieval: use active-recall questions when material is due "
+            "or the student needs retrieval practice.\n"
+            "- feynman: ask the student to explain a concept in their own "
+            "words when there are conceptual gaps or weak understanding.\n"
+            "- elaboration: ask why/how/what-if questions when the student "
+            "needs deeper conceptual understanding.\n\n"
+            "Prefer the weakest topic when there is clear evidence of "
+            "weakness. Do not invent student performance data. "
+            "Return only the structured format requested by the parser."
+        ),
+        (
+            "human",
+            "Student learning state:\n"
+            "{learning_state}\n\n"
+            "Choose exactly one learning activity, the most appropriate "
+            "topic, an appropriate difficulty from 1.0 to 3.5, and a short "
+            "reason explaining the decision.\n\n"
+            "{format_instructions}",
+        ),
+    ]
+)
+
+
 
 if __name__ == "__main__":
     filled = QUESTION_GENERATION_PROMPT.invoke(

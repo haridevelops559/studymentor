@@ -22,19 +22,67 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from app.agents.llm import get_llm
-from app.agents.parsers import get_question_parser
-from app.agents.prompts import QUESTION_GENERATION_PROMPT
+from app.agents.parsers import (
+    get_question_parser,
+    get_learning_decision_parser,
+)
+from app.agents.prompts import (
+    QUESTION_GENERATION_PROMPT,
+    LEARNING_DECISION_PROMPT,
+)
 
 
 def strip_markdown_fences(text: str) -> str:
-    """A RunnableLambda step: models sometimes wrap JSON in ```json fences
-    even when told not to. Strip them before the parser sees the text."""
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("```")[1]
-        cleaned = cleaned.removeprefix("json").strip()
-    return cleaned
+    """
+    Normalize common JSON formatting mistakes from local LLMs.
 
+    Handles:
+    1. Markdown JSON fences:
+           ```json
+           {...}
+           ```
+
+    2. Question batches returned as a bare array:
+           [{...}, {...}]
+       -> {"questions": [{...}, {...}]}
+
+    3. Pydantic/JSON-schema wrapper returned by some models:
+           {"properties": {...}}
+       -> {...}
+    """
+    import json
+
+    cleaned = text.strip()
+
+    # Remove markdown fences.
+    if cleaned.startswith("```"):
+        parts = cleaned.split("```")
+
+        if len(parts) >= 2:
+            cleaned = parts[1].strip()
+
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:].strip()
+
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return cleaned
+
+    # Question-generation model sometimes returns a bare array.
+    if isinstance(parsed, list):
+        return json.dumps({"questions": parsed})
+
+    # Some local models incorrectly reproduce the JSON-schema
+    # "properties" wrapper.
+    if (
+        isinstance(parsed, dict)
+        and set(parsed.keys()) == {"properties"}
+        and isinstance(parsed["properties"], dict)
+    ):
+        parsed = parsed["properties"]
+
+    return json.dumps(parsed)
 
 def build_question_generation_chain():
     """
@@ -54,6 +102,35 @@ def build_question_generation_chain():
         | parser
     )
     return chain
+
+def build_learning_decision_chain():
+    """
+    Adaptive planner chain:
+
+        learning state
+            ↓
+        planner prompt
+            ↓
+        local LLM
+            ↓
+        string parser
+            ↓
+        Pydantic LearningDecision parser
+    """
+    llm = get_llm()
+    parser = get_learning_decision_parser()
+
+    prompt = LEARNING_DECISION_PROMPT.partial(
+        format_instructions=parser.get_format_instructions()
+    )
+
+    return (
+        prompt
+        | llm
+        | StrOutputParser()
+        | RunnableLambda(strip_markdown_fences)
+        | parser
+    )
 
 
 def build_parallel_summary_chain():
@@ -97,3 +174,30 @@ if __name__ == "__main__":
     parallel_chain = build_parallel_summary_chain()
     parallel_result = parallel_chain.invoke(sample_input)
     print(parallel_result)
+    print("\n== Adaptive learning decision ==")
+
+    learning_state = {
+        "weak_topics": [
+            {"topic_id": "os", "retention": 52.0}
+        ],
+        "due_questions": 4,
+        "recent_reviews": [
+            {"rating": "again"},
+            {"rating": "hard"},
+            {"rating": "again"},
+        ],
+        "feynman_gaps": [
+            "page fault"
+        ],
+    }
+
+    decision_chain = build_learning_decision_chain()
+
+    decision = decision_chain.invoke(
+        {
+            "learning_state": str(learning_state),
+        }
+    )
+
+    print("Learning decision:")
+    print(decision)
