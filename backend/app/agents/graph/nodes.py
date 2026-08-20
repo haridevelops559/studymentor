@@ -12,6 +12,7 @@ The graph contains:
 from __future__ import annotations
 
 from app.agents.chains import (
+    build_elaboration_chain,
     build_feynman_feedback_chain,
     build_learning_decision_chain,
     build_question_generation_chain,
@@ -96,7 +97,53 @@ def generate_node(state: QuestionGenState) -> dict:
         ],
     }
 
+def elaboration_node(state: QuestionGenState) -> dict:
+    """
+    Elaboration specialist.
 
+    Generates reasoning-oriented questions based on the learner's
+    weak topics and known conceptual gaps.
+
+    Unlike retrieval, this node focuses on relationships, mechanisms,
+    consequences, comparisons, and what-if reasoning.
+    """
+    chain = build_elaboration_chain()
+
+    topic = state["selected_topic"] or state["topic"]
+
+    learning_state = state["learning_state"]
+
+    gaps = learning_state.get("feynman_gaps", [])
+
+    result = chain.invoke(
+        {
+            "topic": topic,
+            "notes": state["notes"],
+            "gaps": gaps,
+            "num_questions": 3,
+        }
+    )
+
+    questions = [
+        q.model_dump()
+        for q in result.questions
+    ]
+
+    return {
+        "draft_questions": questions,
+        "activity_result": {
+            "activity": "elaboration",
+            "topic": topic,
+            "question_count": len(questions),
+        },
+        "attempt_log": [
+            (
+                f"[elaboration] generated "
+                f"{len(questions)} reasoning questions "
+                f"for '{topic}'"
+            )
+        ],
+    }
 def feynman_node(state: QuestionGenState) -> dict:
     """
     Feynman self-explanation executor.

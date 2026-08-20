@@ -40,11 +40,12 @@ Concepts demonstrated:
 Run: python -m app.agents.graph.build_graph   (requires Ollama running locally)
 """
 from __future__ import annotations
-
+import asyncio
 from typing import TypedDict
 from app.agents.graph.nodes import (
     adaptive_planner_node,
     critique_node,
+    elaboration_node,
     feynman_node,
     generate_node,
     human_approval_node,
@@ -110,6 +111,10 @@ def build_question_gen_graph():
         "feynman",
         feynman_node,
     )
+    graph.add_node(
+        "elaboration",
+         elaboration_node,
+    )
 
     graph.add_node(
         "quality_check",
@@ -143,9 +148,13 @@ def build_question_gen_graph():
         {
             "retrieval": "generate",
             "feynman": "feynman",
-            "elaboration": END,
+            "elaboration": "elaboration" ,
             "end": END,
         },
+    )
+    graph.add_edge(
+        "elaboration",
+         END,
     )
 
     # -------------------------
@@ -254,7 +263,7 @@ def build_parallel_demo_graph():
     return graph.compile()
 
 
-if __name__ == "__main__":
+async def main():
     app = build_question_gen_graph()
 
     initial_state: QuestionGenState = {
@@ -303,7 +312,7 @@ if __name__ == "__main__":
         }
     }
 
-    final_state = app.invoke(
+    final_state = await app.ainvoke(
         initial_state,
         config=config,
     )
@@ -336,3 +345,6 @@ if __name__ == "__main__":
     ):
         print(f"\n{index}. {question['question']}")
         print(f"   Answer: {question['answer']}")
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -38,6 +38,20 @@ def get_question_parser():
 
     return PydanticOutputParser(pydantic_object=GeneratedQuestionBatch)
 
+def get_elaboration_parser():
+    """
+    Pydantic parser for elaboration questions.
+
+    Reuses the same GeneratedQuestionBatch schema as retrieval so
+    downstream code can handle both activity types consistently.
+    """
+    from langchain_core.output_parsers import PydanticOutputParser
+
+    return PydanticOutputParser(
+        pydantic_object=GeneratedQuestionBatch
+    )
+
+
 
 
 

@@ -61,6 +61,39 @@ FEYNMAN_FEEDBACK_PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
+
+ELABORATION_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are StudyMentor's elaboration learning coach. "
+            "Your job is to deepen understanding by generating reasoning-based "
+            "questions that connect ideas, causes, mechanisms, and consequences. "
+            "Do not generate simple definition questions. "
+            "Prefer why, how, compare, predict, and what-if questions. "
+            "Every question MUST have a concise answer based only on the supplied notes."
+        ),
+        (
+            "human",
+            "Topic: {topic}\n\n"
+            "Notes:\n{notes}\n\n"
+            "Known learner gaps:\n{gaps}\n\n"
+            "Generate {num_questions} elaboration questions.\n\n"
+            "Return ONLY valid JSON in exactly this structure:\n"
+            "{{\n"
+            '  "questions": [\n'
+            '    {{"question": "reasoning question", "answer": "concise answer"}},\n'
+            '    {{"question": "reasoning question", "answer": "concise answer"}}\n'
+            "  ]\n"
+            "}}\n\n"
+            "Every object MUST contain both 'question' and 'answer'. "
+            "Do not omit the answer field. "
+            "Do not return markdown fences. "
+            "Do not return any prose outside the JSON."
+        ),
+    ]
+)
+
 LEARNING_DECISION_PROMPT = ChatPromptTemplate.from_messages(
     [
         (

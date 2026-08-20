@@ -25,11 +25,13 @@ from app.agents.llm import get_llm
 from app.agents.parsers import (
     get_question_parser,
     get_learning_decision_parser,
+    get_elaboration_parser,
 )
 from app.agents.prompts import (
     QUESTION_GENERATION_PROMPT,
     LEARNING_DECISION_PROMPT,
     FEYNMAN_FEEDBACK_PROMPT,
+    ELABORATION_PROMPT,
 )
 
 
@@ -133,6 +135,30 @@ def build_learning_decision_chain():
         | parser
     )
 
+def build_elaboration_chain():
+    """
+    Build the elaboration specialist chain.
+
+    Flow:
+
+        topic + notes + learner gaps
+                    ↓
+               LLM reasoning
+                    ↓
+             JSON normalization
+                    ↓
+             Pydantic validation
+    """
+    llm = get_llm()
+    parser = get_elaboration_parser()
+
+    return (
+        ELABORATION_PROMPT
+        | llm
+        | StrOutputParser()
+        | RunnableLambda(strip_markdown_fences)
+        | parser
+    )
 
 def build_parallel_summary_chain():
     """
