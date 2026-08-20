@@ -91,13 +91,54 @@ optional dependencies aren't installed — the core app and its test suite
 never depend on it. See `docs/AGENT-LAYER-GUIDE.md` for setup and a
 file-by-file, terminal-first, git-commit-per-step way to actually learn it.
 
-## Roadmap (deliberately out of MVP scope)
 
-AI-generated questions, OAuth, payments, social/multiplayer features, native
-mobile app, a full calendar, and an admin panel are tracked as `v2` issues —
-not part of this baseline. (The agent layer above is a first exploratory
-step toward AI-generated questions specifically, kept deliberately optional.)
+## What I Explored & Implemented
 
-## License
+| Concept | Implementation |
+|---|---|
+| **LangChain LLM pipelines** | Prompt → Ollama LLM → Pydantic structured output |
+| **Structured generation** | Typed schemas and validation for agent outputs |
+| **LLM Tool Calling** | Model-selected `summarize_weak_topics` and `compute_next_review` tools |
+| **Tool execution loop** | `AIMessage → Tool → ToolMessage → AIMessage` |
+| **LangGraph State** | Typed `QuestionGenState` shared across workflow nodes |
+| **Conditional routing** | Planner dynamically selects Retrieval / Feynman / Elaboration |
+| **Agent retries** | Critic → bounded retry → regeneration |
+| **Checkpointing** | `MemorySaver` + `thread_id` |
+| **Persistent memory** | Learner history → retention / weak topics / due reviews / Feynman gaps |
+| **Specialist workflows** | Retrieval, Feynman and Elaboration activities |
+| **Deterministic evaluation** | Feynman coverage and question-quality checks |
+| **Human-in-the-loop** | Retry exhaustion → human-review state |
+| **Async orchestration** | Async memory node + LangGraph `ainvoke()` |
 
-MIT — do whatever you like with it.
+## Architecture
+
+```text
+FastAPI Backend
+      │
+      ├── Analytics / Scheduler
+      │
+      ├── Database
+      │      │
+      │      ▼
+      │  Learner Memory
+      │      │
+      │      ▼
+      │  LangGraph State
+      │      │
+      │      ▼
+      │  Adaptive Planner
+      │      │
+      │   ┌──┼──────────┐
+      │   ▼  ▼          ▼
+      │ Retrieval Feynman Elaboration
+      │   └──┼──────────┘
+      │      ▼
+      │    Critic
+      │      │
+      │   Approved / Retry
+      │      │
+      │      ▼
+      │ Human Review
+      │
+      └── LLM layer: LangChain + Ollama
+
