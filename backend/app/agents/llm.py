@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:1b")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
 DEFAULT_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 
