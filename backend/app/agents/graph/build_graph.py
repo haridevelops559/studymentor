@@ -49,6 +49,7 @@ from app.agents.graph.nodes import (
     generate_node,
     human_approval_node,
     increment_retry_node,
+    load_memory_node,
 )
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -91,7 +92,10 @@ def build_question_gen_graph():
     # -------------------------
     # Nodes
     # -------------------------
-
+    graph.add_node(
+         "load_memory",
+          load_memory_node,
+    )
     graph.add_node(
         "adaptive_planner",
         adaptive_planner_node,
@@ -126,7 +130,8 @@ def build_question_gen_graph():
     # Entry
     # -------------------------
 
-    graph.set_entry_point("adaptive_planner")
+    graph.set_entry_point("load_memory")
+    graph.add_edge("load_memory", "adaptive_planner")
 
     # -------------------------
     # Planner → activity
@@ -253,6 +258,7 @@ if __name__ == "__main__":
     app = build_question_gen_graph()
 
     initial_state: QuestionGenState = {
+        "user_id": "demo-user",
         "topic": "Virtual Memory",
         "notes": (
             "Virtual memory lets a process use more address space than "

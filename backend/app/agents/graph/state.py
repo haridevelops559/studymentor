@@ -17,6 +17,7 @@ import operator
 
 
 class QuestionGenState(TypedDict):
+    user_id: str
     # ------------------------------------------------------------------
     # Learning context
     # ------------------------------------------------------------------

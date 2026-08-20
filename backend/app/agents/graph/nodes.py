@@ -18,8 +18,27 @@ from app.agents.chains import (
 )
 from app.agents.graph.state import QuestionGenState
 from app.services.scoring import check_feynman_coverage
+from app.agents.memory.learner_memory import build_learner_memory
 
+async def load_memory_node(state: QuestionGenState) -> dict:
+    """
+    Load persistent learner memory before the adaptive planner runs.
+    """
+    memory = await build_learner_memory(
+        user_id=state["user_id"]
+    )
 
+    return {
+        "learning_state": memory,
+        "attempt_log": [
+            (
+                f"[memory] loaded "
+                f"{len(memory['weak_topics'])} weak topics, "
+                f"{memory['due_questions']} due questions, "
+                f"{len(memory['feynman_gaps'])} Feynman gaps"
+            )
+        ],
+    }
 def adaptive_planner_node(state: QuestionGenState) -> dict:
     """Choose the learning activity for the current learner state."""
     chain = build_learning_decision_chain()
