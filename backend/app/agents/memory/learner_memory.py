@@ -39,7 +39,9 @@ async def build_learner_memory(
     introducing a second memory database.
     """
 
-    questions = await get_collection("questions").find({})
+    questions = await get_collection("questions").find(
+        {"user_id": user_id}
+    )
 
     reviews = await get_collection("reviews").find(
         {"user_id": user_id}
@@ -47,7 +49,9 @@ async def build_learner_memory(
 
     feynman_explanations = await get_collection(
         "feynman_explanations"
-    ).find({})
+    ).find(
+        {"user_id": user_id}
+     )
 
     retention_by_topic = topic_retention(questions)
     weak_topics = weakest_topics(questions)

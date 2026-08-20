@@ -108,6 +108,10 @@ async def seed():
         + physics_questions
         + biology_questions
     )
+    for question in all_questions:
+        question["user_id"] = USER_ID
+
+
 
     created_questions = []
 
