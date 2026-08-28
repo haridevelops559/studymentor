@@ -1,18 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-
-from app.agents.memory.seed_memory_demo import seed
 
 from app.config import settings
 from app.routers import dashboard, feynman, notes, questions, reviews, sessions, subjects
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    if settings.use_in_memory_db:
-        await seed()
-    yield
 app = FastAPI(
-    lifespan=lifespan,
     title=settings.app_name,
     description=(
         "API for StudyMentor -- a study workflow built around retrieval "

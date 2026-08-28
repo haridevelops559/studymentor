@@ -268,32 +268,22 @@ async def main():
 
     initial_state: QuestionGenState = {
         "user_id": "demo-user",
-        "topic": "Virtual Memory",
+
+        "topic": "Organic Chemistry",
+
         "notes": (
-            "Virtual memory lets a process use more address space than "
-            "physical RAM by mapping pages to disk. Page faults occur "
-            "when a needed page is not in physical memory."
+            "Stereochemistry is the study of the three-dimensional "
+            "arrangement of atoms in molecules. Chirality occurs when "
+            "a molecule is not superimposable on its mirror image. "
+            "Enantiomers are non-superimposable mirror images."
         ),
-        "learning_state": {
-            "weak_topics": [
-                {
-                    "topic_id": "Virtual Memory",
-                    "retention": 52.0,
-                }
-            ],
-            "due_questions": 4,
-            "recent_reviews": [
-                {"rating": "again"},
-                {"rating": "hard"},
-                {"rating": "again"},
-            ],
-            "feynman_gaps": [
-                "page fault",
-            ],
-        },
+
+        # Learner memory is loaded by load_memory_node().
+        "learning_state": {},
+
         "selected_activity": "",
         "selected_topic": "",
-        "selected_difficulty": 2.0,
+        "selected_difficulty": 0.0,
         "decision_reason": "",
         "attempt_log": [],
         "draft_questions": [],
@@ -304,8 +294,6 @@ async def main():
         "needs_human_review": False,
     }
 
-    # thread_id allows LangGraph's checkpointer to identify and resume
-    # this particular workflow execution.
     config = {
         "configurable": {
             "thread_id": "demo-adaptive-run-1"
@@ -345,6 +333,7 @@ async def main():
     ):
         print(f"\n{index}. {question['question']}")
         print(f"   Answer: {question['answer']}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

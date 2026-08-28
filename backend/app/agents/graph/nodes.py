@@ -40,11 +40,11 @@ async def load_memory_node(state: QuestionGenState) -> dict:
             )
         ],
     }
-def adaptive_planner_node(state: QuestionGenState) -> dict:
+async def adaptive_planner_node(state: QuestionGenState) -> dict:
     """Choose the learning activity for the current learner state."""
     chain = build_learning_decision_chain()
 
-    decision = chain.invoke(
+    decision = await chain.ainvoke(
         {
             "learning_state": str(state["learning_state"]),
         }
